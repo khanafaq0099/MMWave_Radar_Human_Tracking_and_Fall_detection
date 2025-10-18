@@ -1,0 +1,18 @@
+# Basic
+numpy
+Send2Trash
+scipy
+pyserial
+matplotlib
+scikit-learn
+
+# Camera
+opencv-python
+
+# Gmail
+google-api-python-client
+google-auth-oauthlib
+func-timeout
+
+# Video Compressor
+moviepy
