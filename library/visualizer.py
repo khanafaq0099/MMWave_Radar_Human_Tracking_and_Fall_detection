@@ -10,7 +10,7 @@ from multiprocessing import Manager
 
 import matplotlib
 import numpy as np
-import winsound
+# import winsound
 from matplotlib import pyplot as plt
 from matplotlib.ticker import LinearLocator
 

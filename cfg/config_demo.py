@@ -18,9 +18,9 @@ AUTOSAVE_PERIOD = 600  # second, the max time period saved for auto save (radar)
 # multiple class instantiated, multiple config used
 RADAR_CFG_LIST = [
     {'name'          : 'IWR1843_Ori',
-     'cfg_port_name' : 'COM3',
-     'data_port_name': 'COM4',
-     'cfg_file_name' : './cfg/IWR1843_3D_20fps_9db.cfg',  # always use 3D data as input
+     'cfg_port_name' : '/dev/ttyUSB0',  # for linux
+     'data_port_name': '/dev/ttyUSB1',
+     'cfg_file_name' : './cfg/profile_3d.cfg',  # always use 3D data as input
      'xlim'          : None,  # the x-direction limit for cloud points from this single radar, set as [a, b), from radar view
      'ylim'          : (0.25, 5),
      'zlim'          : None,

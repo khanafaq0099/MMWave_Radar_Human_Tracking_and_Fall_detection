@@ -11,7 +11,7 @@ from datetime import datetime
 
 import cv2
 import numpy as np
-import winsound
+# import winsound
 
 from library.utils import folder_create_with_curmonth
 
@@ -198,8 +198,8 @@ class SaveCenter:
                     self.buffer_status = False
                     # send file name for compression
                     self.compress_video_file.value = self.asave_info['file_path']
-                    winsound.Beep(800, 100)
-                    winsound.Beep(500, 100)
+                    # winsound.Beep(800, 100)
+                    # winsound.Beep(500, 100)
 
     # used for radar data save of all cases
     def _pickle_save(self, data, file_label, file_time, file_dir='./'):
@@ -207,8 +207,8 @@ class SaveCenter:
         with open(file_dir + file_name, 'wb') as file:
             pickle.dump(data, file)
         self._log(f'{file_name} saved.')
-        winsound.Beep(500, 100)
-        winsound.Beep(800, 100)
+        # winsound.Beep(500, 100)
+        # winsound.Beep(800, 100)
 
     # used for camera data save of manual case only
     def _opencv_save(self, data, timestamp, file_label, file_time, file_format, file_dir='./'):
@@ -233,8 +233,8 @@ class SaveCenter:
             self.compress_video_file.value = file_dir + file_name
         else:
             self._log(f'{file_name} save failed! Unsupported file type.')
-        winsound.Beep(800, 100)
-        winsound.Beep(500, 100)
+        # winsound.Beep(800, 100)
+        # winsound.Beep(500, 100)
 
     def _log(self, txt):  # print with device name
         print(f'[{self.__class__.__name__}]\t{txt}')
@@ -254,8 +254,8 @@ class SaveCenter:
             if self.videowriter_status:
                 self.videowriter.release()
                 self._log(f"{os.path.basename(self.asave_info['file_path'])} saved with FPS: {round(self.asave_info['fps'], 2)}.")
-                winsound.Beep(800, 100)
-                winsound.Beep(500, 100)
+                # winsound.Beep(800, 100)
+                # winsound.Beep(500, 100)
             else:
                 self.videowriter.release()
 

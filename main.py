@@ -17,7 +17,7 @@ import warnings
 from multiprocessing import Process, Manager
 from time import sleep
 
-import winsound
+# import winsound
 
 # import essential modules
 from library import RadarReader, Visualizer, SyncMonitor, SaveCenter
@@ -43,13 +43,13 @@ except:
     pass
 
 # import module configs
-hostname = socket.gethostname()
-if hostname == 'LAPTOP-Pro':
-    from cfg.config_demo_3R import *
-else:
-    from cfg.config_demo import *
+# hostname = socket.gethostname()
+# if hostname == 'LAPTOP-Pro':
+#     from cfg.config_demo_3R import *
+# else:
+from cfg.config_demo import *
 
-    raise warnings.warn('Hostname is not found! Default config is applied.')
+    # raise warnings.warn('Hostname is not found! Default config is applied.')
 
 
 # start the instance for the process
@@ -193,24 +193,24 @@ if __name__ == '__main__':
     proc_list.append(vis_proc)
     monitor_proc = Process(target=monitor_proc_method, args=(run_flag, radar_rd_queue_list, shared_param_dict), kwargs=kwargs_CFG, name='Module_SCM')  # queue monitor process
     proc_list.append(monitor_proc)
-    save_proc = Process(target=save_proc_method, args=(run_flag, shared_param_dict), kwargs=kwargs_CFG, name='Module_SVC')  # save center process
-    proc_list.append(save_proc)
+    # save_proc = Process(target=save_proc_method, args=(run_flag, shared_param_dict), kwargs=kwargs_CFG, name='Module_SVC')  # save center process
+    # proc_list.append(save_proc)
 
     # optional processes, can be disabled
-    try:
-        kwargs_CFG.update({'CAMERA_CFG': CAMERA_CFG})
-        if CAM_enable:
-            camera_proc = Process(target=camera_proc_method, args=(run_flag, shared_param_dict), kwargs=kwargs_CFG, name='Module_CAM')  # camera process
-            proc_list.append(camera_proc)
-    except:
-        pass
-    try:
-        kwargs_CFG.update({'EMAIL_NOTIFIER_CFG': EMAIL_NOTIFIER_CFG})
-        if EMN_enable:
-            email_proc = Process(target=email_proc_method, args=(run_flag, shared_param_dict), kwargs=kwargs_CFG, name='Module_EMN')  # email notifier process
-            proc_list.append(email_proc)
-    except:
-        pass
+    # try:
+    #     kwargs_CFG.update({'CAMERA_CFG': CAMERA_CFG})
+    #     if CAM_enable:
+    #         camera_proc = Process(target=camera_proc_method, args=(run_flag, shared_param_dict), kwargs=kwargs_CFG, name='Module_CAM')  # camera process
+    #         # proc_list.append(camera_proc)
+    # except:
+    #     pass
+    # try:
+    #     kwargs_CFG.update({'EMAIL_NOTIFIER_CFG': EMAIL_NOTIFIER_CFG})
+    #     if EMN_enable:
+    #         email_proc = Process(target=email_proc_method, args=(run_flag, shared_param_dict), kwargs=kwargs_CFG, name='Module_EMN')  # email notifier process
+    #         # proc_list.append(email_proc)
+    # except:
+    #     pass
     # try:
     #     kwargs_CFG.update({'VIDEO_COMPRESSOR_CFG': VIDEO_COMPRESSOR_CFG})
     #     if VDC_enable:
@@ -219,13 +219,13 @@ if __name__ == '__main__':
     # except:
     #     pass
 
-    test_proc = Process(target=test_proc_method, args=(run_flag, shared_param_dict), name='Module_GUI')  # GUI process
-    proc_list.insert(0, test_proc)
-    for proc in proc_list:
-        if proc.name == 'Module_GUI':
-            shared_param_dict['proc_status_dict'][proc.name] = True
-        else:
-            shared_param_dict['proc_status_dict'][proc.name] = False
+    # test_proc = Process(target=test_proc_method, args=(run_flag, shared_param_dict), name='Module_GUI')  # GUI process
+    # proc_list.insert(0, test_proc)
+    # for proc in proc_list:
+    #     if proc.name == 'Module_GUI':
+    #         shared_param_dict['proc_status_dict'][proc.name] = True
+    #     else:
+    #         shared_param_dict['proc_status_dict'][proc.name] = False
 
     # start the processes and wait to finish
     for t in proc_list:
@@ -235,4 +235,4 @@ if __name__ == '__main__':
         t.join()
         sleep(0.2)
 
-    winsound.Beep(1000, 500)
+    # winsound.Beep(1000, 500)
