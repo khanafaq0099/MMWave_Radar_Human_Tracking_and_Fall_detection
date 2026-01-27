@@ -41,6 +41,11 @@ VISUALIZER_CFG = {
     'VIS_xlim'                : (-2, 2),
     'VIS_ylim'                : (0, 4),
     'VIS_zlim'                : (0, 2),
+    'use_ti_visualizer'     : True,
+    'use_matplotlib' : False,
+    'ti_port_write' : '/tmp/ttyUSB0',
+    'ti_port_read'  : '/tmp/ttyUSB1',
+    'ti_output_stage': 'filtered_pc',  # Options: 'filtered_pc', 'clustered_pc', 'tracked_obj', 'all'
 
     'auto_inactive_skip_frame': int(4 * RADAR_FPS),  # frames, short skip radar frames and process one when no object is detected
 }
