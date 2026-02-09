@@ -24,28 +24,23 @@ RADAR_CFG_LIST = [
      'xlim'          : None,  # the x-direction limit for cloud points from this single radar, set as [a, b), from radar view
      'ylim'          : (0.25, 5),
      'zlim'          : None,
-     'pos_offset'    : (0, 0, 1),  # default pos_offset is (0, 0, 0)
-     'facing_angle'  : {'angle': (0, 0, 0), 'sequence': None},  # right-hand global coord-sys, (x, y, z): [-180, 180] positive counted anti-clockwise when facing from axis vertex towards origin, default rotation sequence: zyx
-     'SNRV_threshold'  : {'range': (200, None), 'speed_none_0_exception': True},  # if speed_none_0_exception is True, then the data with low SNR but with speed will be reserved
+     'pos_offset'    : (0, 0, 2.5),  # default pos_offset is (0, 0, 0)
+     'facing_angle'  : {'angle': (-30, 0, 0), 'sequence': None},  # right-hand global coord-sys, (x, y, z): [-180, 180] positive counted anti-clockwise when facing from axis vertex towards origin, default rotation sequence: zyx
+     'SNRV_threshold': {'range': (50, None), 'speed_none_0_exception': True},  # if speed_none_0_exception is True, then the data with low SNR but with speed will be reserved
      },
 ]
 
 # multiple class instantiated, single config used
 FRAME_EARLY_PROCESSOR_CFG = {  # early process config
-    'FEP_frame_deque_length': 10,  # the number of frame stacked
+    'FEP_frame_deque_length': 2,  # the number of frame stacked
 }
 
 # single class instantiated, single config used
 VISUALIZER_CFG = {
     'dimension'               : '3D',  # only effect visualizer demo,
-    'VIS_xlim'                : (-2, 2),
-    'VIS_ylim'                : (0, 4),
-    'VIS_zlim'                : (0, 2),
-    'use_ti_visualizer'     : True,
-    'use_matplotlib' : False,
-    'ti_port_write' : '/tmp/ttyUSB0',
-    'ti_port_read'  : '/tmp/ttyUSB1',
-    'ti_output_stage': 'filtered_pc',  # Options: 'filtered_pc', 'clustered_pc', 'tracked_obj', 'all'
+    'VIS_xlim'                : (-3, 3),
+    'VIS_ylim'                : (0, 6),
+    'VIS_zlim'                : (0, 4),
 
     'auto_inactive_skip_frame': int(4 * RADAR_FPS),  # frames, short skip radar frames and process one when no object is detected
 }
@@ -53,9 +48,9 @@ VISUALIZER_CFG = {
 # single class instantiated, single config used
 FRAME_POST_PROCESSOR_CFG = {  # post process config
     # cloud point filter para
-    'FPP_global_xlim' : (-2, 2),  # the x-direction limit for merged cloud points from all radars, set as [a, b), from global view
-    'FPP_global_ylim' : (0, 4),
-    'FPP_global_zlim' : (0.1, 2),
+    'FPP_global_xlim' : (-3, 3),  # the x-direction limit for merged cloud points from all radars, set as [a, b), from global view
+    'FPP_global_ylim' : (0, 6),
+    'FPP_global_zlim' : (0.1, 5),
     'FPP_SNRV_threshold': {'range': None, 'speed_none_0_exception': True},  # the points in this energy strength range will be preserved, if speed_none_0_exception is True, then the data with low SNR but with speed will be reserved
 }
 
@@ -63,7 +58,7 @@ FRAME_POST_PROCESSOR_CFG = {  # post process config
 DBSCAN_GENERATOR_CFG = {  # DBSCAN para config
     'Default'             : {
         'DBS_eps'        : 0.3,  # maximum distance, larger means the further points can be clustered, smaller means the points need to be closer
-        'DBS_min_samples': 10,  # minimum samples, larger means more points are needed to form a cluster, 1-each point can be treated as a cluster, no noise
+        'DBS_min_samples': 5,  # minimum samples, larger means more points are needed to form a cluster, 1-each point can be treated as a cluster, no noise
 
         # DBSCAN filter para
         'DBS_cp_pos_xlim': None,  # the position limit in x-direction for central points of clusters
@@ -123,7 +118,7 @@ BGNOISE_FILTER_CFG = {  # Background noise filter config
 
 # single class instantiated, single config used
 HUMAN_TRACKING_CFG = {  # tracking system config
-    'TRK_enable'                      : True,
+    'TRK_enable'                      : False,
 
     # Tracking system para
     'TRK_obj_bin_number'              : 2,  # the maximum number of object which can be detected

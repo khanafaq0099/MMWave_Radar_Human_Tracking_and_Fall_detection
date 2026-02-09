@@ -189,12 +189,12 @@ if __name__ == '__main__':
                   'SAVE_CENTER_CFG'         : SAVE_CENTER_CFG,
                   'SYNC_MONITOR_CFG'        : SYNC_MONITOR_CFG}
     # start essential processes
+    # monitor_proc = Process(target=monitor_proc_method, args=(run_flag, radar_rd_queue_list, shared_param_dict), kwargs=kwargs_CFG, name='Module_SCM')  # queue monitor process
+    # proc_list.append(monitor_proc)
     vis_proc = Process(target=vis_proc_method, args=(run_flag, radar_rd_queue_list, shared_param_dict), kwargs=kwargs_CFG, name='Module_VIS')  # visualization process
     proc_list.append(vis_proc)
-    monitor_proc = Process(target=monitor_proc_method, args=(run_flag, radar_rd_queue_list, shared_param_dict), kwargs=kwargs_CFG, name='Module_SCM')  # queue monitor process
-    proc_list.append(monitor_proc)
-    save_proc = Process(target=save_proc_method, args=(run_flag, shared_param_dict), kwargs=kwargs_CFG, name='Module_SVC')  # save center process
-    proc_list.append(save_proc)
+    # save_proc = Process(target=save_proc_method, args=(run_flag, shared_param_dict), kwargs=kwargs_CFG, name='Module_SVC')  # save center process
+    # proc_list.append(save_proc)
 
     # optional processes, can be disabled
     # try:
@@ -228,11 +228,44 @@ if __name__ == '__main__':
     #         shared_param_dict['proc_status_dict'][proc.name] = False
 
     # start the processes and wait to finish
-    for t in proc_list:
-        t.start()
+    # # Initialize process status
+    for proc in proc_list:
+        shared_param_dict['proc_status_dict'][proc.name] = False
+    
+    # Start all processes
+    print("\n" + "="*70)
+    print("STARTING PROCESSES...")
+    print("="*70)
+    for proc in proc_list:
+        print(f"Starting {proc.name}...")
+        proc.start()
         sleep(0.5)
-    for t in proc_list:
-        t.join()
-        sleep(0.2)
-
+    
+    print("\n" + "="*70)
+    print("SYSTEM RUNNING - Press Ctrl+C to stop")
+    print("="*70)
+    
+    # Wait for all processes to finish
+    try:
+        for proc in proc_list:
+            proc.join()
+    except KeyboardInterrupt:
+        print("\n\n" + "="*70)
+        print("STOPPING SYSTEM...")
+        print("="*70)
+        run_flag.value = False
+        
+        # Give processes time to cleanup
+        sleep(2)
+        
+        # Force terminate if still running
+        for proc in proc_list:
+            if proc.is_alive():
+                print(f"Force terminating {proc.name}...")
+                proc.terminate()
+                proc.join(timeout=1)
+    
+    print("\n" + "="*70)
+    print("SYSTEM STOPPED")
+    print("="*70)
     # winsound.Beep(1000, 500)

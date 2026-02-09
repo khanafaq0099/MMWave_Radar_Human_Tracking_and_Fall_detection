@@ -9,13 +9,19 @@ from datetime import datetime
 
 import numpy as np
 import serial
-
+import struct
 from library.TI.parser_mmw_demo import parser_one_mmw_demo_output_packet
 from library.frame_early_processor import FrameEProcessor
 
 header_length = 8 + 32
 magic_word = b'\x02\x01\x04\x03\x06\x05\x08\x07'
+
 stop_word = 'sensorStop'
+HEADER_LENGTH = 40  # bytes (8 magic + 32 header info)
+# TLV Types for 3D People Tracking
+TLV_TYPE_TRACKER_PROC_TARGET_LIST = 1010  # 3D target list
+TLV_TYPE_TARGET_HEIGHT = 1012  # Height TLV
+TLV_TYPE_COMPRESSED_POINTS = 1020  # Compressed Point Cloud TLV
 
 
 class RadarReader:
@@ -59,47 +65,273 @@ class RadarReader:
         return True
 
     # module entrance
+    
     def run(self):
+        """Main loop - read, parse TLV 1010/1020, transform, queue"""
         if not self.connect():
             self._log(f"Radar {self.name} Connection Failed")
             self.run_flag.value = False
+            return
 
-        data = b''
+        data_buffer = b''
+        self._log('Starting data acquisition...')
+        
         while self.run_flag.value:
-            data += self.data_port.read(self.data_port.inWaiting())  # may have incomplete frame which is not multiple of 32 Bytes
+            try:
+                # Read available data
+                bytes_available = self.data_port.in_waiting
+                if bytes_available > 0:
+                    data_buffer += self.data_port.read(bytes_available)
+                
+                # Look for complete frame (at least 2 magic words)
+                if data_buffer.count(magic_word) >= 2:
+                    # Find first magic word
+                    start_idx = data_buffer.find(magic_word)
+                    if start_idx == -1:
+                        continue
+                    
+                    # Extract frame starting from magic word
+                    frame_data = data_buffer[start_idx:]
+                    
+                    # Parse the frame to get tracks AND point cloud
+                    parsed_data = self._parse_frame(frame_data)
+                    
+                    if parsed_data is not None:
+                        point_cloud = parsed_data['point_cloud']
+                        heights = parsed_data['heights']
+                        num_points = parsed_data['num_points']
+                        frame_length = parsed_data['frame_length']
+                        try:
+                            transformed_points = None
+                            if point_cloud is not None and len(point_cloud) > 0:
+                                transformed_points = self.fep.FEP_accumulate_update(point_cloud)
+                            
+                                self.radar_rd_queue.put(transformed_points)
+                            
+                        except Exception as e:
+                            self._log(f'Transform error: {e}')
+                            import traceback
+                            traceback.print_exc()
+                            
+                        # Remove processed frame from buffer
+                        if frame_length > 0:
+                            data_buffer = data_buffer[start_idx + frame_length:]
+                        else:
+                            data_buffer = data_buffer[start_idx + len(magic_word):]
+                        
+                    else:
+                        # Parse failed, skip magic word
+                        data_buffer = data_buffer[start_idx + len(magic_word):]
+                
+                # Prevent buffer overflow
+                if len(data_buffer) > 100000:
+                    self._log(f'Warning: Buffer overflow, clearing')
+                    data_buffer = b''
+                    
+            except Exception as e:
+                self._log(f'Error in main loop: {e}')
+                time.sleep(0.01)
 
-            # guarantee at lease 2 headers which is 1 frame in this data line
-            if magic_word in data:
-                data_cache = data[data.index(magic_word) + header_length:]
-                if magic_word in data_cache:
-                    # parse the data
-                    parser_result, \
-                        headerStartIndex, \
-                        totalPacketNumBytes, \
-                        numDetObj, \
-                        numTlv, \
-                        subFrameNumber, \
-                        detectedX_array, \
-                        detectedY_array, \
-                        detectedZ_array, \
-                        detectedV_array, \
-                        detectedRange_array, \
-                        detectedAzimuth_array, \
-                        detectedElevation_array, \
-                        detectedSNR_array, \
-                        detectedNoise_array = parser_one_mmw_demo_output_packet(data, len(data), print_enable=0)
-                    # put data into queue, convert list to nparray, and transpose from (channels, points) to (points, channels)
-                    try:
-                        frame = self.fep.FEP_accumulate_update(np.array((detectedX_array, detectedY_array, detectedZ_array, detectedV_array, detectedSNR_array)).transpose())
-                    except:
-                        # print('Data parser BROKEN!!!!!!!!!!!!!!!')
-                        pass
-                    self.radar_rd_queue.put(frame)
-                    # self._log(str(len(data)) + '\t' + str(data))
-                    # winsound.Beep(500, 200)
+    # def run(self):
+    #     if not self.connect():
+    #         self._log(f"Radar {self.name} Connection Failed")
+    #         self.run_flag.value = False
 
-                    # remove the first header and get ready for next header detection
-                    data = data_cache
+    #     data = b''
+    #     while self.run_flag.value:
+    #         data += self.data_port.read(self.data_port.inWaiting())  # may have incomplete frame which is not multiple of 32 Bytes
+
+    #         # guarantee at lease 2 headers which is 1 frame in this data line
+    #         if magic_word in data:
+    #             data_cache = data[data.index(magic_word) + header_length:]
+    #             if magic_word in data_cache:
+    #                 print('Frame detected, parsing...')
+    #                 # parse the data
+    #                 parsed_data = self._parse_frame(data)
+    #                 if parsed_data is None:
+    #                     data = data_cache
+    #                     continue
+    #                 # put data into queue, convert list to nparray, and transpose from (channels, points) to (points, channels)
+
+    #                 point_cloud = parsed_data['point_cloud']
+    #                 if point_cloud is None or len(point_cloud) == 0:
+    #                     data = data_cache
+    #                     continue
+    #                 # frame = self.fep.FEP_accumulate_update(np.array((detectedX_array, detectedY_array, detectedZ_array, detectedV_array, detectedSNR_array)).transpose())
+    #                 frame = self.fep._transform_point_cloud(point_cloud)
+    #                 if frame is not None:
+    #                     self.radar_rd_queue.put(frame)
+    #                 print(f'Parsed frame with {parsed_data["num_points"]} points')
+
+    #                 # print('Data parser BROKEN!!!!!!!!!!!!!!!')
+    #                 # self.radar_rd_queue.put(frame)
+    #                 # self._log(str(len(data)) + '\t' + str(data))
+    #                 # winsound.Beep(500, 200)
+
+    #                 # remove the first header and get ready for next header detection
+    #                 data = data_cache
+
+    def _parse_frame(self, data):
+        """
+        Parse a single frame containing TLV 1010, 1012, and 1020
+        Returns dict with all parsed data or None on error
+        """
+        try:
+            if len(data) < HEADER_LENGTH:
+                return None
+            
+            # Parse header (40 bytes after magic word)
+            header = data[8:HEADER_LENGTH]
+            
+            version = struct.unpack('I', header[0:4])[0]
+            total_packet_len = struct.unpack('I', header[4:8])[0]
+            platform = struct.unpack('I', header[8:12])[0]
+            frame_number = struct.unpack('I', header[12:16])[0]
+            time_cpu_cycles = struct.unpack('I', header[16:20])[0]
+            num_detected_obj = struct.unpack('I', header[20:24])[0]
+            num_tlvs = struct.unpack('I', header[24:28])[0]
+            subframe_number = struct.unpack('I', header[28:32])[0]
+            
+            if len(data) < total_packet_len:
+                return None
+            
+            # Parse TLVs
+            tlv_start = HEADER_LENGTH
+            tracks = []
+            heights = None
+            point_cloud = None
+            num_targets = 0
+            num_points = 0
+            
+            for _ in range(num_tlvs):
+                if tlv_start + 8 > len(data):
+                    break
+                
+                tlv_type = struct.unpack('I', data[tlv_start:tlv_start+4])[0]
+                tlv_length = struct.unpack('I', data[tlv_start+4:tlv_start+8])[0]
+                tlv_data_start = tlv_start + 8
+                # print(f'Found TLV: type={tlv_type}, length={tlv_length}')
+                # TLV 1010 (3D Target List)
+                # if tlv_type == TLV_TYPE_TRACKER_PROC_TARGET_LIST:
+                #     tracks, num_targets = self._parse_tlv_1010_data(
+                #         data[tlv_data_start:tlv_data_start+tlv_length])
+                
+                # TLV 1020 (Compressed Point Cloud)
+                if tlv_type == TLV_TYPE_COMPRESSED_POINTS:
+                    # print('Parsing TLV 1020: Compressed Point Cloud')
+                    point_cloud, num_points = self._parse_tlv_1020_data(
+                        data[tlv_data_start:tlv_data_start+tlv_length])
+                
+                # TLV 1012 (Target Height)
+                # elif tlv_type == TLV_TYPE_TARGET_HEIGHT:
+                #     heights = self._parse_tlv_1012_data(
+                #         data[tlv_data_start:tlv_data_start+tlv_length])
+                
+                tlv_start = tlv_data_start + tlv_length
+            
+            return {
+                'tracks': tracks,
+                'point_cloud': point_cloud,
+                'heights': heights,
+                'frame_number': frame_number,
+                'frame_length': total_packet_len,
+                'num_targets': num_targets,
+                'num_points': num_points
+            }
+            
+        except Exception as e:
+            self._log(f'Parse error: {e}')
+            self.parse_errors += 1
+            return None
+
+    def _parse_tlv_1020_data(self, tlv_data):
+        """
+        Parse TLV 1020: Compressed Point Cloud
+        
+        Input format from radar (compressed spherical):
+        - Header: 5 floats (elevationUnit, azimuthUnit, dopplerUnit, rangeUnit, snrUnit)
+        - Per point: elevation(int8), azimuth(int8), doppler(int16), range(uint16), snr(uint16)
+        
+        Output: Cartesian coordinates [x, y, z, doppler, snr] for easier transformation
+        
+        TI's spherical to Cartesian conversion (matching visualizer):
+        - X = Range * sin(Azimuth) * cos(Elevation)
+        - Y = Range * cos(Azimuth) * cos(Elevation)  
+        - Z = Range * sin(Elevation)
+        """
+        try:
+            if len(tlv_data) < 20:
+                return None, 0
+            
+            # Parse units (first 20 bytes = 5 floats)
+            # Order: elevationUnit, azimuthUnit, dopplerUnit, rangeUnit, snrUnit
+            pUnitStruct = '<5f'
+            pUnit = struct.unpack(pUnitStruct, tlv_data[0:20])
+            elevation_unit = pUnit[0]
+            azimuth_unit = pUnit[1]
+            doppler_unit = pUnit[2]
+            range_unit = pUnit[3]
+            snr_unit = pUnit[4]
+            
+            # Parse points (remaining bytes)
+            # Format: elevation(int8), azimuth(int8), doppler(int16), range(uint16), snr(uint16)
+            pointStruct = '<2bh2H'  # 2 signed bytes, 1 signed short, 2 unsigned shorts
+            pointSize = struct.calcsize(pointStruct)  # = 8 bytes
+            
+            point_data = tlv_data[20:]
+            num_points = len(point_data) // pointSize
+            # print(f"num_points = {num_points}")
+            if num_points == 0:
+                return None, 0
+            
+            # Preallocate output array: [x, y, z, doppler, snr]
+            points = np.zeros((num_points, 5), dtype=np.float32)
+            
+            for i in range(num_points):
+                offset = i * pointSize
+                
+                try:
+                    elevation_c, azimuth_c, doppler_c, range_c, snr_c = struct.unpack(
+                        pointStruct, point_data[offset:offset + pointSize])
+                except:
+                    self._log(f'Point {i} parse failed')
+                    break
+                
+                # Handle signed overflow (matching TI visualizer code)
+                # The struct already handles this with 'b' for signed byte
+                # and 'h' for signed short, but let's be explicit
+                
+                # Decompress using units
+                elevation = elevation_c * elevation_unit  # radians
+                azimuth = azimuth_c * azimuth_unit  # radians
+                doppler = doppler_c * doppler_unit  # m/s
+                range_m = range_c * range_unit  # meters
+                snr = snr_c * snr_unit  # ratio
+                
+                # Convert spherical (range, azimuth, elevation) to Cartesian (x, y, z)
+                # Using TI's convention (matching the visualizer):
+                #   X = Range * sin(Azimuth) * cos(Elevation)
+                #   Y = Range * cos(Azimuth) * cos(Elevation)
+                #   Z = Range * sin(Elevation)
+                cos_elev = np.cos(elevation)
+                sin_elev = np.sin(elevation)
+                cos_azim = np.cos(azimuth)
+                sin_azim = np.sin(azimuth)
+                
+                x = range_m * sin_azim * cos_elev
+                y = range_m * cos_azim * cos_elev
+                z = range_m * sin_elev
+                
+                points[i, :] = [x, y, z, doppler, snr]
+                # print(f'Point {i}: x={x:.2f}, y={y:.2f}, z={z:.2f}, doppler={doppler:.2f}, snr={snr:.2f}')
+            
+            return points, num_points
+            
+        except Exception as e:
+            self._log(f'Error parsing TLV 1020: {e}')
+            import traceback
+            traceback.print_exc()
+            return None, 0
 
     # connect the ports
     def _connect_port(self, cfg_port_name, data_port_name):

@@ -35,6 +35,35 @@ class FrameEProcessor:  # early processing for frame of each radar before mergin
         """
         super().__init__()
 
+    def _transform_point_cloud(self, point_cloud):
+        """
+        Apply coordinate transformation to point cloud using FEP
+        
+        Args:
+            point_cloud: ndarray (N, 5) with [x, y, z, doppler, snr] in Cartesian
+        
+        Returns:
+            transformed: ndarray (N, 5) with transformed Cartesian coordinates
+        """
+        if point_cloud is None or len(point_cloud) == 0:
+            return None
+        
+        # Extract positions (x, y, z) for transformation
+        positions = point_cloud[:, 0:3].copy()
+        
+        # Apply rotation (same as tracks)
+        pos_rotated = self.FEP_trans_rotation_3D(positions)
+        
+        # Apply translation (same as tracks)
+        pos_transformed = self.FEP_trans_position_3D(pos_rotated)
+        
+        # Build output array with transformed positions + original doppler/snr
+        transformed = np.zeros_like(point_cloud)
+        transformed[:, 0:3] = pos_transformed
+        transformed[:, 3] = point_cloud[:, 3]  # doppler (unchanged)
+        transformed[:, 4] = point_cloud[:, 4]  # snr (unchanged)
+        
+        return transformed
     def FEP_accumulate_update(self, frame):  # ndarray(points, channels=5) of 1 frame
         # append frames
         self.FEP_frame_group_deque.append(frame)

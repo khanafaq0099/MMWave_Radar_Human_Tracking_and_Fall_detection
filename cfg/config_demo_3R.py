@@ -134,7 +134,7 @@ BGNOISE_FILTER_CFG = {  # Background noise filter config
 
 # single class instantiated, single config used
 HUMAN_TRACKING_CFG = {  # tracking system config
-    'TRK_enable'                      : True,
+    'TRK_enable'                      : False,
 
     # Tracking system para
     'TRK_obj_bin_number'              : 2,  # the maximum number of object which can be detected
