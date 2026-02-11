@@ -147,35 +147,34 @@ class Visualizer:
                         _ = q.get(block=True, timeout=5)
 
             for i, RDR_CFG in enumerate(self.RDR_CFG_LIST):
-                # print(f'Getting data from Radar {RDR_CFG["name"]}...')
-                data_1radar = self.radar_rd_queue_list[i].get(block=True, timeout=5)
-                # print(f"data value: {data_1radar.shape}")
+                data_1radar = self.radar_rd_queue_list[i].get(block=True, timeout=0.1)
                 # print(f"data sample: {data_1radar[:5, :]}")
                 
                 # apply SNR and speed filter for each radar channel
-                # val_data, SNR_noise = SNRV_filter(data_1radar, RDR_CFG['SNRV_threshold'])
-                # val_data_allradar = np.concatenate([val_data_allradar, data_1radar])
-                # SNR_noise_allradar = np.concatenate([SNR_noise_allradar, SNR_noise])
-                # # draw raw point cloud
-                            # Plot each radar in different color
-                # print(f'len(data_1radar) = {len(data_1radar)}')
-                if len(data_1radar) > 0:
-                    self._plot(ax1, 
-                            data_1radar[:, 0], 
-                            data_1radar[:, 1], 
-                            data_1radar[:, 2], 
-                            marker='.', 
-                            linestyle='None', 
-                            color=RP_colormap[i])
-                # self._plot(ax1, data_1radar[:, 0], data_1radar[:, 1], data_1radar[:, 2], marker='.', linestyle='None', color=RP_colormap[i])
+                val_data, SNR_noise = SNRV_filter(data_1radar, RDR_CFG['SNRV_threshold'])
+                val_data_allradar = np.concatenate([val_data_allradar, val_data])
+                SNR_noise_allradar = np.concatenate([SNR_noise_allradar, SNR_noise])
+                # # draw raw point cloud Plot each radar in different color
+                # self._plot(ax1,
+                #            val_data[:, 0], val_data[:, 1], val_data[:, 2],
+                #            marker='.', linestyle='None', color=RP_colormap[i])
+
+                # if len(data_1radar) > 0:
+                #     self._plot(ax1, 
+                #             data_1radar[:, 0], 
+                #             data_1radar[:, 1], 
+                #             data_1radar[:, 2], 
+                #             marker='.', 
+                #             linestyle='None', 
+                #             color=RP_colormap[i])
 
                 # save the frames
                 save_data_frame[RDR_CFG['name']] = data_1radar
 
         except queue.Empty:
             self._log('Raw Data Queue Empty.')
-            self.run_flag.value = False
-            return  
+            # self.run_flag.value = False
+            # return  
 
         # put frame and time into queue
         self.save_queue.put({'source'   : 'radar',
@@ -184,61 +183,72 @@ class Visualizer:
                              })
 
         # apply global boundary filter
-        # val_data_allradar = self.fpp.FPP_boundary_filter(val_data_allradar)
-        # SNR_noise_allradar = self.fpp.FPP_boundary_filter(SNR_noise_allradar)
+        val_data_allradar = self.fpp.FPP_boundary_filter(val_data_allradar)
+        SNR_noise_allradar = self.fpp.FPP_boundary_filter(SNR_noise_allradar)
         # apply global energy strength filter
-        # val_data_allradar, global_SNR_noise = self.fpp.FPP_SNRV_filter(val_data_allradar)
+        val_data_allradar, global_SNR_noise = self.fpp.FPP_SNRV_filter(val_data_allradar)
+        # self._plot(ax1,
+        #     val_data_allradar[:, 0], val_data_allradar[:, 1], val_data_allradar[:, 2],
+        #     marker='.', linestyle='None', color=RP_colormap[i])
+        
         # apply background noise filter
-        # val_data_allradar = self.fpp.BGN_filter(val_data_allradar)
+        val_data_allradar = self.fpp.BGN_filter(val_data_allradar)
 
         # draw signal energy strength
         # for i in range(len(SNR_colormap)):
         #     val_data_allradar_SNR, _ = np_filter(val_data_allradar, idx=4, range_lim=(i * 100, (i + 1) * 100))
         #     self._plot(ax1, val_data_allradar_SNR[:, 0], val_data_allradar_SNR[:, 1], val_data_allradar_SNR[:, 2], marker='.', color=SNR_colormap[i])
             
-            
-        # self._plot(ax1, val_data_allradar[:, 0], val_data_allradar[:, 1], val_data_allradar[:, 2], marker='.', color=SNR_colormap[i])
+        self._plot(ax1, 
+                    val_data_allradar[:, 0], 
+                    val_data_allradar[:, 1], 
+                    val_data_allradar[:, 2], 
+                    marker='.', 
+                    linestyle='None', 
+                    color=RP_colormap[i])
+        # self._plot(ax1, val_data_allradar[:, 0], val_data_allradar[:, 1], val_data_allradar[:, 2],
+        #            marker='.', color=SNR_colormap[i])
 
         # draw valid point, DBSCAN envelope
         # vertices_list, valid_points_list, _, DBS_noise = self.fpp.DBS(val_data_allradar)
-        # vertices_list, valid_points_list, _, DBS_noise = self.fpp.DBS_dynamic_SNR(val_data_allradar)
-        # for vertices in vertices_list:
-        #     self._plot(ax1, vertices[:, 0], vertices[:, 1], vertices[:, 2], linestyle='-', color='salmon')
+        vertices_list, valid_points_list, _, DBS_noise = self.fpp.DBS_dynamic_SNR(val_data_allradar)
+        for vertices in vertices_list:
+            self._plot(ax1, vertices[:, 0], vertices[:, 1], vertices[:, 2], linestyle='-', color='salmon')
 
         # background noise filter
-        # if self.fpp.BGN_enable:
-        #     print('BGN Filter Enabled.')
-        #     # update the background noise
-        #     if len(vertices_list) > 0:
-        #         self.fpp.BGN_update(np.concatenate([SNR_noise_allradar, global_SNR_noise, DBS_noise]))
-        #     else:
-        #         self.fpp.BGN_update(np.concatenate([SNR_noise_allradar, global_SNR_noise]))
-        #     # draw BGN area
-        #     BGN_block_list = self.fpp.BGN_get_filter_area()
-        #     for bgn in BGN_block_list:
-        #         self._plot(ax1, bgn[:, 0], bgn[:, 1], bgn[:, 2], marker='.', linestyle='-', color='g')
+        if self.fpp.BGN_enable:
+            print('BGN Filter Enabled.')
+            # update the background noise
+            if len(vertices_list) > 0:
+                self.fpp.BGN_update(np.concatenate([SNR_noise_allradar, global_SNR_noise, DBS_noise]))
+            else:
+                self.fpp.BGN_update(np.concatenate([SNR_noise_allradar, global_SNR_noise]))
+            # draw BGN area
+            BGN_block_list = self.fpp.BGN_get_filter_area()
+            for bgn in BGN_block_list:
+                self._plot(ax1, bgn[:, 0], bgn[:, 1], bgn[:, 2], marker='.', linestyle='-', color='g')
 
         # tracking system
-        # if self.fpp.TRK_enable:
-        #     print('Tracking System Enabled.')
-        #     self.fpp.TRK_update_poss_matrix(valid_points_list)
-        #     # draw object central points
-        #     obj_status_list = []
-        #     for person in self.fpp.TRK_people_list:
-        #         obj_cp, _, obj_status = person.get_info()
-        #         obj_status_list.append(obj_status)
-        #         self._plot(ax1, obj_cp[:, 0], obj_cp[:, 1], obj_cp[:, 2], marker='o', color=OS_colormap[obj_status])
-        #         # if obj_status == 3:  # warning when object falls
-        #         #     winsound.Beep(1000, 20)
+        if self.fpp.TRK_enable:
+            print('Tracking System Enabled.')
+            self.fpp.TRK_update_poss_matrix(valid_points_list)
+            # draw object central points
+            obj_status_list = []
+            for person in self.fpp.TRK_people_list:
+                obj_cp, _, obj_status = person.get_info()
+                obj_status_list.append(obj_status)
+                self._plot(ax1, obj_cp[:, 0], obj_cp[:, 1], obj_cp[:, 2], marker='o', color=OS_colormap[obj_status])
+                # if obj_status == 3:  # warning when object falls
+                #     winsound.Beep(1000, 20)
 
-        #     # auto save based on object detection
-        #     if self.AUTOSAVE_ENABLE:
-        #         if max(obj_status_list) >= 0:  # object detected
-        #             # activate flag
-        #             self.autosave_flag.value = True
-        #         else:
-        #             # deactivate flag
-        #             self.autosave_flag.value = False
+            # auto save based on object detection
+            if self.AUTOSAVE_ENABLE:
+                if max(obj_status_list) >= 0:  # object detected
+                    # activate flag
+                    self.autosave_flag.value = True
+                else:
+                    # deactivate flag
+                    self.autosave_flag.value = False
 
         # wait at the end of each loop
         plt.pause(0.001)

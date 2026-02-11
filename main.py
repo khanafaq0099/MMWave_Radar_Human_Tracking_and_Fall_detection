@@ -189,12 +189,12 @@ if __name__ == '__main__':
                   'SAVE_CENTER_CFG'         : SAVE_CENTER_CFG,
                   'SYNC_MONITOR_CFG'        : SYNC_MONITOR_CFG}
     # start essential processes
-    # monitor_proc = Process(target=monitor_proc_method, args=(run_flag, radar_rd_queue_list, shared_param_dict), kwargs=kwargs_CFG, name='Module_SCM')  # queue monitor process
-    # proc_list.append(monitor_proc)
+    monitor_proc = Process(target=monitor_proc_method, args=(run_flag, radar_rd_queue_list, shared_param_dict), kwargs=kwargs_CFG, name='Module_SCM')  # queue monitor process
+    proc_list.append(monitor_proc)
     vis_proc = Process(target=vis_proc_method, args=(run_flag, radar_rd_queue_list, shared_param_dict), kwargs=kwargs_CFG, name='Module_VIS')  # visualization process
     proc_list.append(vis_proc)
-    # save_proc = Process(target=save_proc_method, args=(run_flag, shared_param_dict), kwargs=kwargs_CFG, name='Module_SVC')  # save center process
-    # proc_list.append(save_proc)
+    save_proc = Process(target=save_proc_method, args=(run_flag, shared_param_dict), kwargs=kwargs_CFG, name='Module_SVC')  # save center process
+    proc_list.append(save_proc)
 
     # optional processes, can be disabled
     # try:
