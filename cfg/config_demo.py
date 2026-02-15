@@ -17,29 +17,40 @@ AUTOSAVE_PERIOD = 600  # second, the max time period saved for auto save (radar)
 
 # multiple class instantiated, multiple config used
 RADAR_CFG_LIST = [
-    {'name'          : 'IWR1843_Ori',
+    {'name'          : 'IWR1843_Center',
      'cfg_port_name' : '/dev/ttyUSB0',  # for linux
      'data_port_name': '/dev/ttyUSB1',
      'cfg_file_name' : './cfg/profile_3d.cfg',  # always use 3D data as input
      'xlim'          : None,  # the x-direction limit for cloud points from this single radar, set as [a, b), from radar view
      'ylim'          : (0.25, 5),
      'zlim'          : None,
-     'pos_offset'    : (0, 0, 2.5),  # default pos_offset is (0, 0, 0)
-     'facing_angle'  : {'angle': (-30, 0, 0), 'sequence': None},  # right-hand global coord-sys, (x, y, z): [-180, 180] positive counted anti-clockwise when facing from axis vertex towards origin, default rotation sequence: zyx
+     'pos_offset'    : (0, 0.17, 2.46),  # default pos_offset is (0, 0, 0)
+     'facing_angle'  : {'angle': (-25, 0, 0), 'sequence': None},  # right-hand global coord-sys, (x, y, z): [-180, 180] positive counted anti-clockwise when facing from axis vertex towards origin, default rotation sequence: zyx
      'SNRV_threshold': {'range': (50, None), 'speed_none_0_exception': True},  # if speed_none_0_exception is True, then the data with low SNR but with speed will be reserved
+     },
+     {'name'          : 'IWR1843_Right',
+     'cfg_port_name' : '/dev/ttyUSB2',
+     'data_port_name': '/dev/ttyUSB3',
+     'cfg_file_name' : './cfg/profile_3d.cfg',  # always use 3D data as input
+     'xlim'          : None,  # the x-direction limit for cloud points from this single radar, set as [a, b), from radar view
+     'ylim'          : (0.25, 4),
+     'zlim'          : None,
+     'pos_offset'    : (1.7, 1.47, 2.286),  # default pos_offset is (0, 0, 0)
+     'facing_angle'  : {'angle': (-25, 0, 90), 'sequence': None},  # right-hand global coord-sys, (x, y, z): [-180, 180] positive counted anti-clockwise when facing from axis end towards origin, default rotation sequence: zyx
+     'SNRV_threshold'  : {'range': (50, None), 'speed_none_0_exception': True},  # if speed_none_0_exception is True, then the data with low SNR but with speed will be reserved
      },
 ]
 
 # multiple class instantiated, single config used
 FRAME_EARLY_PROCESSOR_CFG = {  # early process config
-    'FEP_frame_deque_length': 2,  # the number of frame stacked
+    'FEP_frame_deque_length': 4,  # the number of frame stacked
 }
 
 # single class instantiated, single config used
 VISUALIZER_CFG = {
     'dimension'               : '3D',  # only effect visualizer demo,
-    'VIS_xlim'                : (-3, 3),
-    'VIS_ylim'                : (0, 6),
+    'VIS_xlim'                : (-1.7, 1.7),
+    'VIS_ylim'                : (0, 4),
     'VIS_zlim'                : (0, 4),
 
     'auto_inactive_skip_frame': int(4 * RADAR_FPS),  # frames, short skip radar frames and process one when no object is detected
@@ -118,7 +129,7 @@ BGNOISE_FILTER_CFG = {  # Background noise filter config
 
 # single class instantiated, single config used
 HUMAN_TRACKING_CFG = {  # tracking system config
-    'TRK_enable'                      : False,
+    'TRK_enable'                      : True,
 
     # Tracking system para
     'TRK_obj_bin_number'              : 2,  # the maximum number of object which can be detected

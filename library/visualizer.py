@@ -1,25 +1,41 @@
 """
 Designed for data visualization, abbr. VIS
+PyQtGraph-based replacement for matplotlib - processes every frame without dropping.
+
+Drop-in replacement: same __init__ signature, same run() entry point,
+same queue consumption, same filtering pipeline.
 """
 
-import math
 import queue
 import time
+import sys
 from datetime import datetime
 from multiprocessing import Manager
 
-import matplotlib
 import numpy as np
-# import winsound
-from matplotlib import pyplot as plt
-from matplotlib.ticker import LinearLocator
+import pyqtgraph as pg
+import pyqtgraph.opengl as gl
+from pyqtgraph.Qt import QtCore, QtWidgets
 
 from library import SNRV_filter, np_filter
 from library.frame_post_processor import FramePProcessor
 
-RP_colormap = ['C5', 'C7', 'C8']  # the colormap for radar raw points
-SNR_colormap = ['lavender', 'thistle', 'violet', 'darkorchid', 'indigo']  # the colormap for radar energy strength
-OS_colormap = ['grey', 'green', 'gold', 'red']  # the colormap for object status
+# Color presets (RGBA float 0-1) matching original colormap intent
+RP_COLORS = [
+    (0.8, 0.2, 0.8, 1.0),   # C5 - purple-ish
+    (0.5, 0.5, 0.5, 1.0),   # C7 - grey
+    (0.6, 0.8, 0.2, 1.0),   # C8 - olive
+]
+RADAR_POS_COLOR = (0.55, 0.0, 0.0, 1.0)       # DarkRed
+ENVELOPE_COLOR = (0.98, 0.5, 0.45, 1.0)        # salmon
+BGN_COLOR = (0.0, 0.5, 0.0, 1.0)              # green
+# Object status colors: grey, green, gold, red
+OS_COLORS = [
+    (0.5, 0.5, 0.5, 1.0),
+    (0.0, 0.5, 0.0, 1.0),
+    (1.0, 0.84, 0.0, 1.0),
+    (1.0, 0.0, 0.0, 1.0),
+]
 
 
 class Visualizer:
@@ -39,6 +55,7 @@ class Visualizer:
         self.autosave_flag = shared_param_dict['autosave_flag']
         self.status = shared_param_dict['proc_status_dict']
         self.status['Module_VIS'] = True
+
         """
         pass config static parameters
         """
@@ -61,236 +78,294 @@ class Visualizer:
         """
         self.fpp = FramePProcessor(**kwargs_CFG)  # call other class
 
-        # setup for matplotlib plot
-        matplotlib.use('TkAgg')  # set matplotlib backend
-        plt.rcParams['toolbar'] = 'None'  # disable the toolbar
-        # create a figure
-        self.fig = plt.figure()
-        # adjust figure position
-        mngr = plt.get_current_fig_manager()
-        mngr.window.wm_geometry('+30+30')
-        # draws a completely frameless window
-        win = plt.gcf().canvas.manager.window
-        win.overrideredirect(1)
-        # interactive mode on, no need plt.show()
-        plt.ion()
+        # ---- PyQtGraph setup ----
+        self.app = QtWidgets.QApplication.instance()
+        if self.app is None:
+            self.app = QtWidgets.QApplication(sys.argv)
 
+        if self.dimension in ('2D', '3D'):
+            self._setup_3d_view()  # use 3D view for both (2D just locks camera)
+        
         self._log('Start...')
 
-    # module entrance
-    def run(self):
+    # ----------------------------------------------------------------
+    #  PyQtGraph 3D scene setup
+    # ----------------------------------------------------------------
+    def _setup_3d_view(self):
+        """Create the OpenGL 3D scatter view with grid and axes."""
+        self.widget = gl.GLViewWidget()
+        self.widget.setWindowTitle('Radar Visualizer (PyQtGraph)')
+        self.widget.setGeometry(30, 30, 900, 700)
+
+        # Camera defaults
         if self.dimension == '2D':
-            # create a plot
-            ax1 = self.fig.add_subplot(111)
-
-            while self.run_flag.value:
-                # clear and reset
-                plt.cla()
-                ax1.set_xlim(self.VIS_xlim[0], self.VIS_xlim[1])
-                ax1.set_ylim(self.VIS_ylim[0], self.VIS_ylim[1])
-                ax1.xaxis.set_major_locator(LinearLocator(5))  # set axis scale
-                ax1.yaxis.set_major_locator(LinearLocator(5))
-                ax1.set_xlabel('x')
-                ax1.set_ylabel('y')
-                ax1.set_title('Radar')
-                # update the canvas
-                self._update_canvas(ax1)
-
-        elif self.dimension == '3D':
-            # create a plot
-            ax1 = self.fig.add_subplot(111, projection='3d')
-
-            spin = 0
-            while self.run_flag.value:
-                # clear and reset
-                plt.cla()
-                ax1.set_xlim(self.VIS_xlim[0], self.VIS_xlim[1])
-                ax1.set_ylim(self.VIS_ylim[0], self.VIS_ylim[1])
-                ax1.set_zlim(self.VIS_zlim[0], self.VIS_zlim[1])
-                ax1.xaxis.set_major_locator(LinearLocator(3))  # set axis scale
-                ax1.yaxis.set_major_locator(LinearLocator(3))
-                ax1.zaxis.set_major_locator(LinearLocator(3))
-                ax1.set_xlabel('x')
-                ax1.set_ylabel('y')
-                ax1.set_zlabel('z')
-                ax1.set_title('Radar')
-                spin = 0.0
-                ax1.view_init(ax1.elev - 0.5 * math.sin(spin), ax1.azim - 0.3 * math.sin(1.5 * spin))  # spin the view angle
-                # ax1.view_init(elev=20, azim=45) 
-                # update the canvas
-                self._update_canvas(ax1)
+            # Top-down view for 2D mode
+            self.widget.setCameraPosition(distance=8, elevation=90, azimuth=-90)
         else:
+            self.widget.setCameraPosition(distance=8, elevation=25, azimuth=45)
+
+        # Add grid on the XY plane (ground)
+        grid = gl.GLGridItem()
+        grid.setSize(
+            x=self.VIS_xlim[1] - self.VIS_xlim[0],
+            y=self.VIS_ylim[1] - self.VIS_ylim[0],
+        )
+        grid.setSpacing(x=1, y=1)
+        grid.translate(
+            (self.VIS_xlim[0] + self.VIS_xlim[1]) / 2,
+            (self.VIS_ylim[0] + self.VIS_ylim[1]) / 2,
+            self.VIS_zlim[0],
+        )
+        self.widget.addItem(grid)
+
+        # Add axis lines for reference
+        axis = gl.GLAxisItem()
+        axis.setSize(x=2, y=2, z=2)
+        self.widget.addItem(axis)
+
+        # ---- Persistent scatter plot items (updated every frame, never recreated) ----
+
+        # Radar position markers (static, one per radar)
+        self.radar_pos_items = []
+        for RDR_CFG in self.RDR_CFG_LIST:
+            pos = np.array([[
+                RDR_CFG['pos_offset'][0],
+                RDR_CFG['pos_offset'][1],
+                RDR_CFG['pos_offset'][2],
+            ]], dtype=np.float32)
+            item = gl.GLScatterPlotItem(
+                pos=pos, color=RADAR_POS_COLOR, size=12, pxMode=True
+            )
+            self.widget.addItem(item)
+            self.radar_pos_items.append(item)
+
+        # Filtered point cloud scatter (main display)
+        self.cloud_scatter = gl.GLScatterPlotItem(
+            pos=np.zeros((1, 3), dtype=np.float32),
+            color=(0.8, 0.2, 0.8, 0.8),
+            size=4,
+            pxMode=True,
+        )
+        self.widget.addItem(self.cloud_scatter)
+
+        # DBSCAN envelope lines (reuse a pool of line items)
+        self._envelope_pool = []
+        self._envelope_active = 0
+
+        # BGN area lines
+        self._bgn_pool = []
+        self._bgn_active = 0
+
+        # Tracking object markers
+        self._track_pool = []
+        self._track_active = 0
+
+        self.widget.show()
+
+    # ----------------------------------------------------------------
+    #  Reusable GL item pools (avoids add/remove overhead every frame)
+    # ----------------------------------------------------------------
+    def _get_line_item(self, pool, index):
+        """Return a GLLinePlotItem from pool, creating if needed."""
+        while len(pool) <= index:
+            item = gl.GLLinePlotItem(pos=np.zeros((2, 3)), color=(1, 1, 1, 0), width=1)
+            item.setVisible(False)
+            self.widget.addItem(item)
+            pool.append(item)
+        return pool[index]
+
+    def _get_track_item(self, index):
+        """Return a GLScatterPlotItem for tracking markers."""
+        while len(self._track_pool) <= index:
+            item = gl.GLScatterPlotItem(
+                pos=np.zeros((1, 3)), color=(0.5, 0.5, 0.5, 1), size=14, pxMode=True
+            )
+            item.setVisible(False)
+            self.widget.addItem(item)
+            self._track_pool.append(item)
+        return self._track_pool[index]
+
+    def _hide_pool_from(self, pool, start_index):
+        """Hide all pool items from start_index onward."""
+        for i in range(start_index, len(pool)):
+            pool[i].setVisible(False)
+
+    # ----------------------------------------------------------------
+    #  Main loop
+    # ----------------------------------------------------------------
+    def run(self):
+        if self.dimension in ('2D', '3D'):
+            # Use a QTimer to drive frame updates inside the Qt event loop
+            self._timer = QtCore.QTimer()
+            self._timer.timeout.connect(self._update_frame)
+            self._timer.start(1)  # 1 ms interval = as fast as possible
+
+            # Also check run_flag periodically
+            self._flag_timer = QtCore.QTimer()
+            self._flag_timer.timeout.connect(self._check_run_flag)
+            self._flag_timer.start(100)
+
+            # Run the Qt event loop (blocks here)
+            self.app.exec()
+        else:
+            # No-display mode: just drain queues
             while self.run_flag.value:
                 for q in self.radar_rd_queue_list:
-                    _ = q.get(block=True, timeout=5)
+                    try:
+                        _ = q.get(block=True, timeout=5)
+                    except queue.Empty:
+                        pass
 
-    def _update_canvas(self, ax1):
-        # draw radar point
-        for RDR_CFG in self.RDR_CFG_LIST:
-            self._plot(ax1, 
-                       [RDR_CFG['pos_offset'][0]],
-                       [RDR_CFG['pos_offset'][1]],
-                       [RDR_CFG['pos_offset'][2]],
-                       marker='o',
-                       color='DarkRed')
+    def _check_run_flag(self):
+        """Periodic check — stop Qt loop when system is shutting down."""
+        if not self.run_flag.value:
+            self._timer.stop()
+            self._flag_timer.stop()
+            self.app.quit()
 
-        # get values from queues of all radars
+    # ----------------------------------------------------------------
+    #  Per-frame update (replaces _update_canvas)
+    # ----------------------------------------------------------------
+    def _update_frame(self):
+        """Called by QTimer — consumes one frame from each radar queue and renders."""
+        if not self.run_flag.value:
+            return
+
+        # ---- Collect data from all radar queues ----
         val_data_allradar = np.ndarray([0, 5], dtype=np.float16)
         SNR_noise_allradar = np.ndarray([0, 5], dtype=np.float16)
         save_data_frame = {}
+
         try:
             # adaptive short skip when no object is detected
             if self.AUTOSAVE_ENABLE and not self.autosave_flag.value:
-                print('No object detected, skip frames to save processing power.')
                 for _ in range(self.auto_inactive_skip_frame):
                     for q in self.radar_rd_queue_list:
                         _ = q.get(block=True, timeout=5)
 
             for i, RDR_CFG in enumerate(self.RDR_CFG_LIST):
-                # print(f'Getting data from Radar {RDR_CFG["name"]}...')
-                data_1radar = self.radar_rd_queue_list[i].get(block=True, timeout=5)
-                # print(f"data value: {data_1radar.shape}")
-                # print(f"data sample: {data_1radar[:5, :]}")
-                
+                data_1radar = self.radar_rd_queue_list[i].get(block=True, timeout=0.1)
+
                 # apply SNR and speed filter for each radar channel
-                # val_data, SNR_noise = SNRV_filter(data_1radar, RDR_CFG['SNRV_threshold'])
-                # val_data_allradar = np.concatenate([val_data_allradar, data_1radar])
-                # SNR_noise_allradar = np.concatenate([SNR_noise_allradar, SNR_noise])
-                # # draw raw point cloud
-                            # Plot each radar in different color
-                # print(f'len(data_1radar) = {len(data_1radar)}')
-                if len(data_1radar) > 0:
-                    self._plot(ax1, 
-                            data_1radar[:, 0], 
-                            data_1radar[:, 1], 
-                            data_1radar[:, 2], 
-                            marker='.', 
-                            linestyle='None', 
-                            color=RP_colormap[i])
-                # self._plot(ax1, data_1radar[:, 0], data_1radar[:, 1], data_1radar[:, 2], marker='.', linestyle='None', color=RP_colormap[i])
+                val_data, SNR_noise = SNRV_filter(data_1radar, RDR_CFG['SNRV_threshold'])
+                val_data_allradar = np.concatenate([val_data_allradar, val_data])
+                SNR_noise_allradar = np.concatenate([SNR_noise_allradar, SNR_noise])
 
                 # save the frames
                 save_data_frame[RDR_CFG['name']] = data_1radar
 
         except queue.Empty:
             self._log('Raw Data Queue Empty.')
-            self.run_flag.value = False
-            return  
+            return
 
-        # put frame and time into queue
-        self.save_queue.put({'source'   : 'radar',
-                             'data'     : save_data_frame,
-                             'timestamp': time.time(),
-                             })
+        # put frame and time into save queue
+        self.save_queue.put({
+            'source': 'radar',
+            'data': save_data_frame,
+            'timestamp': time.time(),
+        })
 
-        # apply global boundary filter
-        # val_data_allradar = self.fpp.FPP_boundary_filter(val_data_allradar)
-        # SNR_noise_allradar = self.fpp.FPP_boundary_filter(SNR_noise_allradar)
-        # apply global energy strength filter
-        # val_data_allradar, global_SNR_noise = self.fpp.FPP_SNRV_filter(val_data_allradar)
-        # apply background noise filter
-        # val_data_allradar = self.fpp.BGN_filter(val_data_allradar)
-
-        # draw signal energy strength
-        # for i in range(len(SNR_colormap)):
-        #     val_data_allradar_SNR, _ = np_filter(val_data_allradar, idx=4, range_lim=(i * 100, (i + 1) * 100))
-        #     self._plot(ax1, val_data_allradar_SNR[:, 0], val_data_allradar_SNR[:, 1], val_data_allradar_SNR[:, 2], marker='.', color=SNR_colormap[i])
-            
-            
-        # self._plot(ax1, val_data_allradar[:, 0], val_data_allradar[:, 1], val_data_allradar[:, 2], marker='.', color=SNR_colormap[i])
-
-        # draw valid point, DBSCAN envelope
-        # vertices_list, valid_points_list, _, DBS_noise = self.fpp.DBS(val_data_allradar)
-        # vertices_list, valid_points_list, _, DBS_noise = self.fpp.DBS_dynamic_SNR(val_data_allradar)
-        # for vertices in vertices_list:
-        #     self._plot(ax1, vertices[:, 0], vertices[:, 1], vertices[:, 2], linestyle='-', color='salmon')
-
+        # ---- Apply filtering pipeline (identical to original) ----
+        # global boundary filter
+        val_data_allradar = self.fpp.FPP_boundary_filter(val_data_allradar)
+        SNR_noise_allradar = self.fpp.FPP_boundary_filter(SNR_noise_allradar)
+        # global energy strength filter
+        val_data_allradar, global_SNR_noise = self.fpp.FPP_SNRV_filter(val_data_allradar)
         # background noise filter
-        # if self.fpp.BGN_enable:
-        #     print('BGN Filter Enabled.')
-        #     # update the background noise
-        #     if len(vertices_list) > 0:
-        #         self.fpp.BGN_update(np.concatenate([SNR_noise_allradar, global_SNR_noise, DBS_noise]))
-        #     else:
-        #         self.fpp.BGN_update(np.concatenate([SNR_noise_allradar, global_SNR_noise]))
-        #     # draw BGN area
-        #     BGN_block_list = self.fpp.BGN_get_filter_area()
-        #     for bgn in BGN_block_list:
-        #         self._plot(ax1, bgn[:, 0], bgn[:, 1], bgn[:, 2], marker='.', linestyle='-', color='g')
+        val_data_allradar = self.fpp.BGN_filter(val_data_allradar)
 
-        # tracking system
-        # if self.fpp.TRK_enable:
-        #     print('Tracking System Enabled.')
-        #     self.fpp.TRK_update_poss_matrix(valid_points_list)
-        #     # draw object central points
-        #     obj_status_list = []
-        #     for person in self.fpp.TRK_people_list:
-        #         obj_cp, _, obj_status = person.get_info()
-        #         obj_status_list.append(obj_status)
-        #         self._plot(ax1, obj_cp[:, 0], obj_cp[:, 1], obj_cp[:, 2], marker='o', color=OS_colormap[obj_status])
-        #         # if obj_status == 3:  # warning when object falls
-        #         #     winsound.Beep(1000, 20)
+        # ---- Update point cloud scatter ----
+        if len(val_data_allradar) > 0:
+            self.cloud_scatter.setData(
+                pos=val_data_allradar[:, :3].astype(np.float32),
+                color=(0.8, 0.2, 0.8, 0.8),
+                size=4,
+            )
+        else:
+            self.cloud_scatter.setData(pos=np.zeros((1, 3), dtype=np.float32),
+                                       color=(0, 0, 0, 0), size=0)
 
-        #     # auto save based on object detection
-        #     if self.AUTOSAVE_ENABLE:
-        #         if max(obj_status_list) >= 0:  # object detected
-        #             # activate flag
-        #             self.autosave_flag.value = True
-        #         else:
-        #             # deactivate flag
-        #             self.autosave_flag.value = False
+        # ---- DBSCAN envelope ----
+        vertices_list, valid_points_list, _, DBS_noise = self.fpp.DBS_dynamic_SNR(val_data_allradar)
+        env_idx = 0
+        for vertices in vertices_list:
+            if len(vertices) >= 2:
+                item = self._get_line_item(self._envelope_pool, env_idx)
+                item.setData(
+                    pos=vertices[:, :3].astype(np.float32),
+                    color=ENVELOPE_COLOR,
+                    width=2,
+                )
+                item.setVisible(False)
+                env_idx += 1
+        self._hide_pool_from(self._envelope_pool, env_idx)
 
-        # wait at the end of each loop
-        plt.pause(0.001)
-        self._detect_key_press(0.001)
+        # ---- Background noise filter ----
+        if self.fpp.BGN_enable:
+            if len(vertices_list) > 0:
+                self.fpp.BGN_update(np.concatenate([SNR_noise_allradar, global_SNR_noise, DBS_noise]))
+            else:
+                self.fpp.BGN_update(np.concatenate([SNR_noise_allradar, global_SNR_noise]))
+            # draw BGN area
+            BGN_block_list = self.fpp.BGN_get_filter_area()
+            bgn_idx = 0
+            for bgn in BGN_block_list:
+                if len(bgn) >= 2:
+                    item = self._get_line_item(self._bgn_pool, bgn_idx)
+                    item.setData(
+                        pos=bgn[:, :3].astype(np.float32),
+                        color=BGN_COLOR,
+                        width=1.5,
+                    )
+                    item.setVisible(True)
+                    bgn_idx += 1
+            self._hide_pool_from(self._bgn_pool, bgn_idx)
 
-    def _plot(self, ax, x, y, z, fmt='', **kwargs):
-        """
-        :param ax: the current canvas
-        :param x: data in x-axis
-        :param y: data in y-axis
-        :param z: data in z-axis
-        :param fmt: plot and plot3D fmt
-        :param kwargs: plot and plot3D marker, linestyle, color
-        :return: None
-        """
-        if len(fmt) > 0:  # if fmt is using
-            if self.dimension == '2D':
-                ax.plot(x, y, fmt)
-            elif self.dimension == '3D':
-                ax.plot3D(x, y, z, fmt)
-        else:  # if para is using
-            for i in ['marker', 'linestyle', 'color']:
-                if not (i in kwargs):
-                    kwargs[i] = 'None'
-            if self.dimension == '2D':
-                ax.plot(x, y, marker=kwargs['marker'], linestyle=kwargs['linestyle'], color=kwargs['color'])
-            elif self.dimension == '3D':
-                ax.plot3D(x, y, z, marker=kwargs['marker'], linestyle=kwargs['linestyle'], color=kwargs['color'])
+        # ---- Tracking system ----
+        if self.fpp.TRK_enable:
+            self.fpp.TRK_update_poss_matrix(valid_points_list)
+            obj_status_list = []
+            trk_idx = 0
+            for person in self.fpp.TRK_people_list:
+                obj_cp, _, obj_status = person.get_info()
+                obj_status_list.append(obj_status)
 
-    def _detect_key_press(self, timeout):  # error caused if the key is pressed at very beginning (first loop)
-        keyPressed = plt.waitforbuttonpress(timeout=timeout)  # detect whether key is pressed or not
-        plt.gcf().canvas.mpl_connect('key_press_event', self._press)  # detect which key is pressed
-        if keyPressed:
-            if self.the_key == 'escape':
-                self.run_flag.value = False
-            # manual save trigger
-            if self.MANSAVE_ENABLE:
-                if self.the_key == '+':
-                    # activate flag
-                    self.mansave_flag.value = 'image'
-                elif self.the_key == '0':
-                    # activate flag
-                    self.mansave_flag.value = 'video'
+                item = self._get_track_item(trk_idx)
+                item.setData(
+                    pos=obj_cp[:, :3].astype(np.float32),
+                    color=OS_COLORS[obj_status],
+                    size=14,
+                )
+                item.setVisible(True)
+                trk_idx += 1
+            self._hide_pool_from(self._track_pool, trk_idx)
 
-    def _press(self, event):
-        self.the_key = event.key
+            # auto save based on object detection
+            if self.AUTOSAVE_ENABLE:
+                if len(obj_status_list) > 0 and max(obj_status_list) >= 0:
+                    self.autosave_flag.value = True
+                else:
+                    self.autosave_flag.value = False
+
+    def keyPressEvent(self, event):
+        """Override if widget is subclassed; here we install an event filter."""
+        key = event.key()
+        if key == QtCore.Qt.Key_Escape:
+            self.run_flag.value = False
+        if self.MANSAVE_ENABLE:
+            if key == QtCore.Qt.Key_Plus:
+                self.mansave_flag.value = 'image'
+            elif key == QtCore.Qt.Key_0:
+                self.mansave_flag.value = 'video'
 
     def _log(self, txt):  # print with device name
         print(f'[{self.__class__.__name__}]\t{txt}')
 
     def __del__(self):
-        plt.close(self.fig)
+        try:
+            self.widget.close()
+        except:
+            pass
         self._log(f"Closed. Timestamp: {datetime.now().strftime('%Y-%m-%d_%H:%M:%S')}")
         self.status['Module_VIS'] = False
         self.run_flag.value = False

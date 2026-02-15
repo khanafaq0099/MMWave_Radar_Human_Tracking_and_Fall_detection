@@ -132,45 +132,6 @@ class RadarReader:
                 self._log(f'Error in main loop: {e}')
                 time.sleep(0.01)
 
-    # def run(self):
-    #     if not self.connect():
-    #         self._log(f"Radar {self.name} Connection Failed")
-    #         self.run_flag.value = False
-
-    #     data = b''
-    #     while self.run_flag.value:
-    #         data += self.data_port.read(self.data_port.inWaiting())  # may have incomplete frame which is not multiple of 32 Bytes
-
-    #         # guarantee at lease 2 headers which is 1 frame in this data line
-    #         if magic_word in data:
-    #             data_cache = data[data.index(magic_word) + header_length:]
-    #             if magic_word in data_cache:
-    #                 print('Frame detected, parsing...')
-    #                 # parse the data
-    #                 parsed_data = self._parse_frame(data)
-    #                 if parsed_data is None:
-    #                     data = data_cache
-    #                     continue
-    #                 # put data into queue, convert list to nparray, and transpose from (channels, points) to (points, channels)
-
-    #                 point_cloud = parsed_data['point_cloud']
-    #                 if point_cloud is None or len(point_cloud) == 0:
-    #                     data = data_cache
-    #                     continue
-    #                 # frame = self.fep.FEP_accumulate_update(np.array((detectedX_array, detectedY_array, detectedZ_array, detectedV_array, detectedSNR_array)).transpose())
-    #                 frame = self.fep._transform_point_cloud(point_cloud)
-    #                 if frame is not None:
-    #                     self.radar_rd_queue.put(frame)
-    #                 print(f'Parsed frame with {parsed_data["num_points"]} points')
-
-    #                 # print('Data parser BROKEN!!!!!!!!!!!!!!!')
-    #                 # self.radar_rd_queue.put(frame)
-    #                 # self._log(str(len(data)) + '\t' + str(data))
-    #                 # winsound.Beep(500, 200)
-
-    #                 # remove the first header and get ready for next header detection
-    #                 data = data_cache
-
     def _parse_frame(self, data):
         """
         Parse a single frame containing TLV 1010, 1012, and 1020

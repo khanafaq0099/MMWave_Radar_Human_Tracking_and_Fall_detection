@@ -58,9 +58,9 @@ def radar_proc_method(_run_flag, _radar_rd_queue, _shared_param_dict, **_kwargs_
     radar.run()
 
 
-def vis_proc_method(_run_flag, _radar_rd_queue_list, _shared_param_dict, **_kwargs_CFG):
-    vis = Visualizer(run_flag=_run_flag, radar_rd_queue_list=_radar_rd_queue_list, shared_param_dict=_shared_param_dict, **_kwargs_CFG)
-    vis.run()
+# def vis_proc_method(_run_flag, _radar_rd_queue_list, _shared_param_dict, **_kwargs_CFG):
+#     vis = Visualizer(run_flag=_run_flag, radar_rd_queue_list=_radar_rd_queue_list, shared_param_dict=_shared_param_dict, **_kwargs_CFG)
+#     vis.run()
 
 
 def monitor_proc_method(_run_flag, _radar_rd_queue_list, _shared_param_dict, **_kwargs_CFG):
@@ -189,12 +189,12 @@ if __name__ == '__main__':
                   'SAVE_CENTER_CFG'         : SAVE_CENTER_CFG,
                   'SYNC_MONITOR_CFG'        : SYNC_MONITOR_CFG}
     # start essential processes
-    # monitor_proc = Process(target=monitor_proc_method, args=(run_flag, radar_rd_queue_list, shared_param_dict), kwargs=kwargs_CFG, name='Module_SCM')  # queue monitor process
-    # proc_list.append(monitor_proc)
-    vis_proc = Process(target=vis_proc_method, args=(run_flag, radar_rd_queue_list, shared_param_dict), kwargs=kwargs_CFG, name='Module_VIS')  # visualization process
-    proc_list.append(vis_proc)
-    # save_proc = Process(target=save_proc_method, args=(run_flag, shared_param_dict), kwargs=kwargs_CFG, name='Module_SVC')  # save center process
-    # proc_list.append(save_proc)
+    monitor_proc = Process(target=monitor_proc_method, args=(run_flag, radar_rd_queue_list, shared_param_dict), kwargs=kwargs_CFG, name='Module_SCM')  # queue monitor process
+    proc_list.append(monitor_proc)
+    # vis_proc = Process(target=vis_proc_method, args=(run_flag, radar_rd_queue_list, shared_param_dict), kwargs=kwargs_CFG, name='Module_VIS')  # visualization process
+    # proc_list.append(vis_proc)
+    save_proc = Process(target=save_proc_method, args=(run_flag, shared_param_dict), kwargs=kwargs_CFG, name='Module_SVC')  # save center process
+    proc_list.append(save_proc)
 
     # optional processes, can be disabled
     # try:
@@ -244,7 +244,14 @@ if __name__ == '__main__':
     print("\n" + "="*70)
     print("SYSTEM RUNNING - Press Ctrl+C to stop")
     print("="*70)
-    
+
+
+    try:
+        vis = Visualizer(run_flag=run_flag, radar_rd_queue_list=radar_rd_queue_list, 
+                        shared_param_dict=shared_param_dict, **kwargs_CFG)
+        vis.run()  # blocks here until Qt event loop exits
+    except KeyboardInterrupt:
+        pass
     # Wait for all processes to finish
     try:
         for proc in proc_list:
