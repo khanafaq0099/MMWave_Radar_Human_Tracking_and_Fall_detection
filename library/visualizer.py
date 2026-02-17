@@ -88,9 +88,7 @@ class Visualizer:
         
         self._log('Start...')
 
-    # ----------------------------------------------------------------
     #  PyQtGraph 3D scene setup
-    # ----------------------------------------------------------------
     def _setup_3d_view(self):
         """Create the OpenGL 3D scatter view with grid and axes."""
         self.widget = gl.GLViewWidget()
@@ -162,9 +160,7 @@ class Visualizer:
 
         self.widget.show()
 
-    # ----------------------------------------------------------------
     #  Reusable GL item pools (avoids add/remove overhead every frame)
-    # ----------------------------------------------------------------
     def _get_line_item(self, pool, index):
         """Return a GLLinePlotItem from pool, creating if needed."""
         while len(pool) <= index:
@@ -185,14 +181,26 @@ class Visualizer:
             self._track_pool.append(item)
         return self._track_pool[index]
 
+    def _get_box_item(self, index):
+        """Return a GLLinePlotItem for bounding box, creating if needed."""
+        while len(self._box_pool) <= index:
+            item = gl.GLLinePlotItem(
+                pos=np.zeros((2, 3), dtype=np.float32),
+                color=(1, 1, 1, 1),
+                width=2,
+                mode='line_strip'  # important for connected edges
+            )
+            item.setVisible(False)
+            self.widget.addItem(item)
+            self._box_pool.append(item)
+        return self._box_pool[index]
+
     def _hide_pool_from(self, pool, start_index):
         """Hide all pool items from start_index onward."""
         for i in range(start_index, len(pool)):
             pool[i].setVisible(False)
 
-    # ----------------------------------------------------------------
     #  Main loop
-    # ----------------------------------------------------------------
     def run(self):
         if self.dimension in ('2D', '3D'):
             # Use a QTimer to drive frame updates inside the Qt event loop
@@ -223,15 +231,11 @@ class Visualizer:
             self._flag_timer.stop()
             self.app.quit()
 
-    # ----------------------------------------------------------------
-    #  Per-frame update (replaces _update_canvas)
-    # ----------------------------------------------------------------
+    #  Per-frame update
     def _update_frame(self):
         """Called by QTimer — consumes one frame from each radar queue and renders."""
         if not self.run_flag.value:
             return
-
-        # ---- Collect data from all radar queues ----
         val_data_allradar = np.ndarray([0, 5], dtype=np.float16)
         SNR_noise_allradar = np.ndarray([0, 5], dtype=np.float16)
         save_data_frame = {}
@@ -250,9 +254,21 @@ class Visualizer:
                 val_data, SNR_noise = SNRV_filter(data_1radar, RDR_CFG['SNRV_threshold'])
                 val_data_allradar = np.concatenate([val_data_allradar, val_data])
                 SNR_noise_allradar = np.concatenate([SNR_noise_allradar, SNR_noise])
-
                 # save the frames
                 save_data_frame[RDR_CFG['name']] = data_1radar
+
+                ##NEWLY ADDED
+                # Average SNR of valid (SNR-filtered) points for this radar
+                if len(val_data) > 0:
+                    avg_snr = float(np.mean(val_data[:, 4]))
+                    print(f"  {RDR_CFG['name']} valid avg SNR: {avg_snr:.1f}  (n={len(val_data)})")
+                else:
+                    print(f"  {RDR_CFG['name']} valid avg SNR: N/A  (no points)")
+
+            # Confirm all radars sent data this frame
+            names = list(save_data_frame.keys())
+            points = [save_data_frame[k].shape[0] for k in names]
+            print(f"[VIS] All {len(names)} radars OK: {names} | points per radar: {points}")
 
         except queue.Empty:
             self._log('Raw Data Queue Empty.')
@@ -265,14 +281,19 @@ class Visualizer:
             'timestamp': time.time(),
         })
 
-        # ---- Apply filtering pipeline (identical to original) ----
-        # global boundary filter
+        # apply global boundary filter
         val_data_allradar = self.fpp.FPP_boundary_filter(val_data_allradar)
         SNR_noise_allradar = self.fpp.FPP_boundary_filter(SNR_noise_allradar)
-        # global energy strength filter
+        # apply global energy strength filter
         val_data_allradar, global_SNR_noise = self.fpp.FPP_SNRV_filter(val_data_allradar)
-        # background noise filter
+        # apply background noise filter
         val_data_allradar = self.fpp.BGN_filter(val_data_allradar)
+
+
+        # draw signal energy strength
+        # for i in range(len(SNR_colormap)):
+        #     val_data_allradar_SNR, _ = np_filter(val_data_allradar, idx=4, range_lim=(i * 100, (i + 1) * 100))
+        #     self._plot(ax1, val_data_allradar_SNR[:, 0], val_data_allradar_SNR[:, 1], val_data_allradar_SNR[:, 2], marker='.', color=SNR_colormap[i])
 
         # ---- Update point cloud scatter ----
         if len(val_data_allradar) > 0:
@@ -285,7 +306,8 @@ class Visualizer:
             self.cloud_scatter.setData(pos=np.zeros((1, 3), dtype=np.float32),
                                        color=(0, 0, 0, 0), size=0)
 
-        # ---- DBSCAN envelope ----
+        # run DBSCAN clustering (boxes drawn from tracker below, not raw DBSCAN)
+        # vertices_list, valid_points_list, _, DBS_noise = self.fpp.DBS(val_data_allradar)
         vertices_list, valid_points_list, _, DBS_noise = self.fpp.DBS_dynamic_SNR(val_data_allradar)
         env_idx = 0
         for vertices in vertices_list:
@@ -321,14 +343,32 @@ class Visualizer:
                     bgn_idx += 1
             self._hide_pool_from(self._bgn_pool, bgn_idx)
 
-        # ---- Tracking system ----
+        # tracking system
         if self.fpp.TRK_enable:
             self.fpp.TRK_update_poss_matrix(valid_points_list)
             obj_status_list = []
             trk_idx = 0
+            box_idx = 0
             for person in self.fpp.TRK_people_list:
-                obj_cp, _, obj_status = person.get_info()
+                obj_cp, obj_size, obj_status = person.get_info()
                 obj_status_list.append(obj_status)
+                # --- Bounding box ---
+                if obj_status >= 1:
+                    half = obj_size[0] / 2
+                    box_vertices = cubehull(
+                        None,
+                        (obj_cp[0, 0] - half[0], obj_cp[0, 0] + half[0]),
+                        (obj_cp[0, 1] - half[1], obj_cp[0, 1] + half[1]),
+                        (obj_cp[0, 2] - half[2], obj_cp[0, 2] + half[2]),
+                    )
+                    box_item = self._get_box_item(box_idx)
+                    box_item.setData(
+                        pos=box_vertices[:, :3].astype(np.float32),
+                        color=OS_COLORS[obj_status],
+                        width=2,
+                    )
+                    box_item.setVisible(True)
+                    box_idx += 1
 
                 item = self._get_track_item(trk_idx)
                 item.setData(
@@ -339,7 +379,7 @@ class Visualizer:
                 item.setVisible(True)
                 trk_idx += 1
             self._hide_pool_from(self._track_pool, trk_idx)
-
+            self._hide_pool_from(self._box_pool, box_idx)
             # auto save based on object detection
             if self.AUTOSAVE_ENABLE:
                 if len(obj_status_list) > 0 and max(obj_status_list) >= 0:
