@@ -11,6 +11,7 @@ import time
 import sys
 from datetime import datetime
 from multiprocessing import Manager
+from utils import cubehull
 
 import numpy as np
 import pyqtgraph as pg
@@ -158,6 +159,8 @@ class Visualizer:
         self._track_pool = []
         self._track_active = 0
 
+        self._box_pool = []
+        
         self.widget.show()
 
     #  Reusable GL item pools (avoids add/remove overhead every frame)
